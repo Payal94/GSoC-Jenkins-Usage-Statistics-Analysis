@@ -45,9 +45,11 @@ class JenkinsWeeklyParser {
         {
             String installId = jParser.getCurrentName();
 
-            def pluginCache = [:]
+            def latestWeekTimestamp = [:]
 
             current = jParser.nextToken();
+            def documents = []
+            def document = [:]
 
             if(installId?.size() == 64 || installId?.size() == 128) { // installation hash is 64 chars
 
@@ -65,44 +67,65 @@ class JenkinsWeeklyParser {
                         int week = cal.get(Calendar.WEEK_OF_YEAR);
                         int year = cal.get(Calendar.YEAR);
                         String key = Integer.toString(year)+"_"+Integer.toString(week)
-                         //if(!latestStatsDate || parsedDate.after(latestStatsDate)){
 
-                        jNode.get("plugins").each { 
-                            String pName = it.get("name").textValue;
-                            String pVersion = it.get("version").textValue;
-                            if(!pVersion.contains("SNAPSHOT") && !pVersion.contains("***") && !pVersion.contains("beta") )
-                            {
-                               if(!weeklyData.containsKey(key))
+                        if(!latestWeekTimestamp.containsKey(key) || parsedDate.after(latestWeekTimestamp[key]))
+                        {
+                            latestWeekTimestamp[key] = parsedDate
+                            jNode.get("plugins").each {
+                                String pName = it.get("name").textValue;
+                                String pVersion = it.get("version").textValue;
+                                if(!pVersion.contains("SNAPSHOT") && !pVersion.contains("***") && !pVersion.contains("beta") )
                                 {
-                                    weeklyData.put(key,[:])
-                                    weeklyData[key].put(pName, [:])
-                                    weeklyData[key][pName].put(pVersion, [])
-                                    weeklyData[key][pName][pVersion].add(installId)
-                                } else {
-                                    if(!weeklyData[key].containsKey(pName))
-                                    {
-                                        weeklyData[key].put(pName ,[:])
-                                        weeklyData[key][pName].put(pVersion, [])
-                                        weeklyData[key][pName][pVersion].add(installId)
-                                    }else{
-                                        if(!weeklyData[key][pName].containsKey(pVersion)) {
-                                            weeklyData[key][pName].put(pVersion, [])
-                                            weeklyData[key][pName][pVersion].add(installId)
-                                        }else {
-                                            if(!weeklyData[key][pName][pVersion].contains(installId)) weeklyData[key][pName][pVersion].add(installId)
+        
+                                    document.put("plugin_name", pName);
+                                    document.put("weeklyData", []);
+                                    def weekData = [:]
+                                    weekData.put("week",week);
+                                    weekData.put("year", year);
+                                    weekData.put("versions", []);
+                                    def versions = [:]
+                                    versions.put("version_number", pVersion);
+                                    versions.put("installation_ids", []);
+                                    versions["installation_ids"].add(installId);
+                                    weekData["versions"].add(versions)
+                                    document["weeklyData"].add(weekData);
+                                    def q = ["plugin_name" : pName, "weeklyData.week" : week, "weeklyData.year" : year,"weeklyData.0.versions.0.version_number" : pVersion ];
+                                    def u = [ $addToSet: ["weeklyData.versions.installation_ids" : [$each : [ installId ]]]];
+                                    def result = db.WeeklyInstallations.findAndModify(q, u)
+                                    if(result != null) println "done"
+                                    else println "no returns"
+                                    //def writeResult = db.WeeklyInstallations.update(q,u)
+                                    //if(writeResult["nMatched"] == 0) db.WeeklyInstallations.insert(document);
+                                    //db.WeeklyInstallations.insert(document);
+
+                                    /*} else {
+                                        if(!document[pName].containsKey(key))
+                                        {
+                                            document[pName].put(key ,[:])
+                                            document[pName][key].put(pVersion, [])
+                                            document[pName][key][pVersion].add(installId)
+                                        }else{
+                                            if(!document[pName][key].containsKey (pVersion)) {
+                                                document[pName][key].put(pVersion, [])
+                                                document[pName][key][pVersion].add(installId)
+                                            }else {
+                                                if(!document[pName][key][pVersion].contains(installId)) document[pName][key][pVersion].add(installId)
+                                            }
                                         }
-                                    }
-                                }  
-                            }   
+                                    }*/
+                                }
+
+                            }
                         }
                     }
                 }
+                
             }
 
         }
-        def json = new groovy.json.JsonBuilder()
-        json.WeeklyInstallations(weeklyData);
-        db.WeeklyInstallations.insert(json);
+        //def json = new groovy.json.JsonBuilder()
+        //json.WeeklyInstallations(weeklyData);
+        //db.WeeklyInstallations.insert(json);
     
 
     }
